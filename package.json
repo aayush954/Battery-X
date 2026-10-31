@@ -1,0 +1,13 @@
+{
+  "name": "batteryx-x",
+  "version": "2.0.0",
+  "private": true,
+  "description": "BATTERYX-X - Intelligent Battery Circularity Digital Twin backed by PostgreSQL and Prisma",
+  "scripts": {
+    "start": "node backend/src/server.js",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down",
+    "docker:reset": "docker compose down -v && docker compose up --build",
+    "test": "node test.js"
+  }
+}

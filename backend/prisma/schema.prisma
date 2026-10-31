@@ -1,0 +1,274 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleName {
+  ADMIN
+  MANUFACTURER
+  OWNER
+  SERVICE_CENTER
+  RECYCLER
+  AUDITOR
+}
+
+enum OrgType {
+  MANUFACTURER
+  SERVICE_CENTER
+  RECYCLER
+  OTHER
+}
+
+enum BatteryStatus {
+  MANUFACTURED
+  INSTALLED
+  ACTIVE_USE
+  HEALTH_DECLINE
+  REMOVED
+  SECOND_LIFE
+  RECYCLED
+  END_OF_LIFE
+}
+
+enum Pathway {
+  EV_REUSE
+  SECOND_LIFE_STORAGE
+  REFURBISHMENT
+  RECYCLING
+  QUARANTINED
+  INSPECTION_REQUIRED
+}
+
+model Role {
+  id    Int      @id @default(autoincrement())
+  name  RoleName @unique
+  users User[]
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  username     String   @unique
+  passwordHash String
+  name         String
+  roleId       Int
+  role         Role     @relation(fields: [roleId], references: [id])
+  organizationId Int?
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  createdAt    DateTime @default(now())
+  active       Boolean  @default(true)
+  emailVerified Boolean @default(true)
+  emailVerifiedAt DateTime?
+  lastLogin    DateTime?
+  passwordChangedAt DateTime @default(now())
+
+  ownedBatteries      Battery[]            @relation("owner")
+  lifecycleEvents     LifecycleEvent[]
+  auditLogs           AuditLog[]
+  transfersFrom       OwnershipTransfer[]  @relation("fromUser")
+  transfersTo         OwnershipTransfer[]  @relation("toUser")
+  secondLifeAssessments SecondLifeAssessment[]
+
+  @@index([email])
+}
+
+model Organization {
+  id      Int     @id @default(autoincrement())
+  name    String
+  type    OrgType
+  users   User[]
+  manufacturers Manufacturer[]
+  maintenanceRecords MaintenanceRecord[]
+  recyclingBatches RecyclingBatch[]
+  lifecycleEvents LifecycleEvent[]
+}
+
+model Manufacturer {
+  id             Int    @id @default(autoincrement())
+  name           String
+  organizationId Int?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  battery_models BatteryModel[]
+}
+
+model BatteryModel {
+  id             Int      @id @default(autoincrement())
+  name           String
+  manufacturerId Int
+  manufacturer   Manufacturer @relation(fields: [manufacturerId], references: [id])
+  chemistry      String
+  capacityKwh    Float
+  voltage        Float
+  batteries      Battery[]
+
+  @@index([manufacturerId])
+}
+
+model Battery {
+  id                Int           @id @default(autoincrement())
+  passportId        String        @unique
+  serialNumber      String        @unique
+  batteryModelId    Int
+  batteryModel      BatteryModel  @relation(fields: [batteryModelId], references: [id])
+  manufacturingDate DateTime
+  weightKg          Float?
+  status            BatteryStatus @default(MANUFACTURED)
+  currentOwnerId    Int?
+  currentOwner      User?         @relation("owner", fields: [currentOwnerId], references: [id])
+  createdAt         DateTime      @default(now())
+
+  installations     BatteryInstallation[]
+  ownershipTransfers OwnershipTransfer[]
+  healthRecords     BatteryHealthRecord[]
+  maintenanceRecords MaintenanceRecord[]
+  lifecycleEvents   LifecycleEvent[]
+  secondLifeAssessments SecondLifeAssessment[]
+  recoveredMaterials RecoveredMaterial[]
+
+  @@index([passportId])
+  @@index([serialNumber])
+  @@index([batteryModelId])
+  @@index([status])
+}
+
+model Vehicle {
+  id                Int      @id @default(autoincrement())
+  registrationNumber String  @unique
+  make              String
+  model             String
+  installations     BatteryInstallation[]
+}
+
+model BatteryInstallation {
+  id          Int       @id @default(autoincrement())
+  batteryId   Int
+  battery     Battery   @relation(fields: [batteryId], references: [id])
+  vehicleId   Int
+  vehicle     Vehicle   @relation(fields: [vehicleId], references: [id])
+  installedAt DateTime  @default(now())
+  removedAt   DateTime?
+
+  @@index([batteryId])
+}
+
+model OwnershipTransfer {
+  id           Int      @id @default(autoincrement())
+  batteryId    Int
+  battery      Battery  @relation(fields: [batteryId], references: [id])
+  fromUserId   Int?
+  fromUser     User?    @relation("fromUser", fields: [fromUserId], references: [id])
+  toUserId     Int
+  toUser       User     @relation("toUser", fields: [toUserId], references: [id])
+  transferredAt DateTime @default(now())
+
+  @@index([batteryId])
+}
+
+model BatteryHealthRecord {
+  id               Int      @id @default(autoincrement())
+  batteryId        Int
+  battery          Battery  @relation(fields: [batteryId], references: [id])
+  recordedAt       DateTime @default(now())
+  soh              Float
+  soc              Float
+  cycleCount       Int
+  measuredCapacity Float
+  temperature      Float?
+  source           String   @default("MANUAL")
+
+  @@index([batteryId])
+  @@index([recordedAt])
+  @@map("battery_health_records")
+}
+
+model MaintenanceRecord {
+  id              Int      @id @default(autoincrement())
+  batteryId       Int
+  battery         Battery  @relation(fields: [batteryId], references: [id])
+  organizationId  Int?
+  organization    Organization? @relation(fields: [organizationId], references: [id])
+  performedAt     DateTime @default(now())
+  description     String
+
+  @@index([batteryId])
+}
+
+model LifecycleEvent {
+  id               Int      @id @default(autoincrement())
+  batteryId        Int
+  battery          Battery  @relation(fields: [batteryId], references: [id])
+  eventType        String
+  eventTimestamp   DateTime @default(now())
+  actorUserId      Int?
+  actor            User?    @relation(fields: [actorUserId], references: [id])
+  organizationId   Int?
+  organization     Organization? @relation(fields: [organizationId], references: [id])
+  previousState    String?
+  newState         String?
+  metadata         Json?
+  eventHash        String
+  previousEventHash String
+
+  @@index([batteryId])
+  @@index([eventTimestamp])
+}
+
+model SecondLifeAssessment {
+  id                Int      @id @default(autoincrement())
+  batteryId         Int
+  battery           Battery  @relation(fields: [batteryId], references: [id])
+  assessedByUserId  Int?
+  assessedBy        User?    @relation(fields: [assessedByUserId], references: [id])
+  soh               Float
+  cycleCount        Int
+  safetyStatus      String
+  recommendedPathway Pathway
+  notes             String?
+  assessedAt        DateTime @default(now())
+
+  @@index([batteryId])
+}
+
+model RecyclingBatch {
+  id             Int      @id @default(autoincrement())
+  batchCode      String   @unique
+  organizationId Int?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  status         String   @default("OPEN")
+  createdAt      DateTime @default(now())
+  recoveredMaterials RecoveredMaterial[]
+}
+
+model RecoveredMaterial {
+  id               Int      @id @default(autoincrement())
+  recyclingBatchId Int
+  recyclingBatch   RecyclingBatch @relation(fields: [recyclingBatchId], references: [id])
+  batteryId        Int
+  battery          Battery  @relation(fields: [batteryId], references: [id])
+  materialType     String
+  quantityKg       Float
+  purity           Float?
+  destination      String?
+  recoveredAt      DateTime @default(now())
+
+  @@index([recyclingBatchId])
+  @@index([batteryId])
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int?
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String
+  entityType String
+  entityId   Int?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
